@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import * as messageController from '../controllers/messages';
 import { authenticationRequired } from '../middlewares/authenticationRequired';
+import { User } from '../models/users';
+import { io } from '../socket';
 
 export const router = Router();
 
@@ -8,12 +10,24 @@ router.post('/', authenticationRequired, async (req: Request, res: Response) => 
   const { conversationId, targets, content } = req.body
   if (!conversationId || !targets || !content) res.sendStatus(400);
 
-  res.send(await messageController.createMessage(
+  const message = await messageController.createMessage(
     req.user as any,
     conversationId,
     targets,
     content
-  ));
+  );
+
+  res.send(message);
+
+  await Promise.all(
+    message.targets.map(async (target) => {
+      const user = await User.findById(target);
+      const socketId = user?.socket;
+      if (socketId) {
+        io.to(socketId).emit('chat-message', message.toJSON());
+      }
+    }),
+  );
 });
 
 router.get('/:conversationId', authenticationRequired, async (req: Request, res: Response) => {
