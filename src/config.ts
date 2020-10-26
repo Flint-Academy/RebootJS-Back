@@ -17,6 +17,8 @@ export interface IConfig {
   mongo_debug: boolean;
   session_cookie_name: string;
   session_secret: string;
+  twilio_auth_sid: string;
+  twilio_auth_token: string;
 }
 
 export function configuration(): IConfig {
