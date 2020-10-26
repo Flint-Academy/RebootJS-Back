@@ -10,6 +10,16 @@ import { User } from './models/users';
 const actives = new Set<Socket>();
 export let io: SocketServer;
 
+const EVENTS_TO_FORWARD = [
+  'call-peering-request',
+  'call-peering-accepted',
+  'call-peering-offer',
+  'call-peering-answer',
+  'call-peering-ice-candidate',
+  'call-additional-peering-required',
+  'call-left',
+];
+
 export function initializeSockets(config: IConfig, httpServer: HTTPServer, sessionStore: Store): SocketServer {
   const { session_cookie_name, session_secret } = config;
   io = socketIO(httpServer);
@@ -38,6 +48,7 @@ async function connect(socket: Socket): Promise<void> {
   user.status = 'available';
   await user.save();
   socket.on('disconnect', () => disconnect(socket, _id));
+  EVENTS_TO_FORWARD.forEach((event) => socket.on(event, (data) => forward(socket, _id, event, data)));
   io.emit('user-update', user.getSafeProfile());
 }
 
@@ -51,11 +62,27 @@ async function disconnect(socket: Socket, _id: string): Promise<void> {
   io.emit('user-update', user.getSafeProfile());
 }
 
+async function forward(socket: Socket, _id: string, event: string, data: any): Promise<void> {
+  const { offer, answer, candidate, ...info } = data;
+  console.log(`Event forwarded: ${event}`);
+  console.log(info);
+  const targetUser = await User.findById(data.target);
+  if (!targetUser) return exitUserNotFound(data.target);
+  const target = targetUser?.socket;
+  if (!target) return exitUserOffline(targetUser._id);
+  socket.to(target).emit(event, { ...data, emitter: _id });
+}
+
+
 function closeSocket(socket: Socket): void {
   socket.disconnect();
   actives.delete(socket);
 }
 
-function exitUserNotFound(_id: string): void {
-  console.log(`User not found: ${_id}`);
+function exitUserNotFound(id: string): void {
+  console.log(`User not found: ${id}`);
+}
+
+function exitUserOffline(id: string){
+  console.log(`User ${id} offline`);
 }
